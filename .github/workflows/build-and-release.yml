@@ -1,0 +1,149 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.1'
+        host: ${{ runner.os == 'Linux' && 'linux' || runner.os == 'Windows' && 'windows' || 'mac' }}
+        target: 'desktop'
+        arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || runner.os == 'macOS' && 'clang_64' || 'gcc_64' }}
+        modules: 'qtbase qttools'
+
+    - name: Install CMake and Ninja
+      uses: lukka/get-cmake@latest
+
+    - name: Configure MSVC (Windows)
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: |
+        cmake --build build --config Release
+
+    - name: Package (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        mkdir -p dist
+        cp build/QtLicenseGenerator dist/
+        chmod +x dist/QtLicenseGenerator
+        cd dist
+        tar -czf QtLicenseGenerator-linux-x64.tar.gz QtLicenseGenerator
+
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir dist
+        cp build/QtLicenseGenerator.exe dist/
+        windeployqt dist/QtLicenseGenerator.exe
+        cd dist
+        7z a QtLicenseGenerator-windows-x64.zip *
+
+    - name: Package (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        mkdir -p dist
+        cp build/QtLicenseGenerator dist/
+        chmod +x dist/QtLicenseGenerator
+        cd dist
+        tar -czf QtLicenseGenerator-macos-x64.tar.gz QtLicenseGenerator
+
+    - name: Upload artifact (Linux)
+      if: runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-executable
+        path: dist/QtLicenseGenerator-linux-x64.tar.gz
+
+    - name: Upload artifact (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-executable
+        path: dist/QtLicenseGenerator-windows-x64.zip
+
+    - name: Upload artifact (macOS)
+      if: runner.os == 'macOS'
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-executable
+        path: dist/QtLicenseGenerator-macos-x64.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download Linux executable
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-executable
+        path: dist
+
+    - name: Download Windows executable
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-executable
+        path: dist
+
+    - name: Download macOS executable
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-executable
+        path: dist
+
+    - name: Create Release
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: |
+          dist/QtLicenseGenerator-linux-x64.tar.gz
+          dist/QtLicenseGenerator-windows-x64.zip
+          dist/QtLicenseGenerator-macos-x64.tar.gz
+        body: |
+          ## 🚀 Qt License Generator ${{ github.ref_name }}
+
+          ### 使用说明
+          1. 下载对应平台的安装包
+          2. 解压后运行 `QtLicenseGenerator` 可执行文件
+          3. 使用 GUI 界面生成和管理许可证
+
+          ### 平台支持
+          - **Linux** (x64)
+          - **Windows** (x64)
+          - **macOS** (x64)
+
+          ### 文件列表
+          - **QtLicenseGenerator-linux-x64.tar.gz** - Linux 版本
+          - **QtLicenseGenerator-windows-x64.zip** - Windows 版本 (包含所有必需的 Qt 运行库)
+          - **QtLicenseGenerator-macos-x64.tar.gz** - macOS 版本
+
+          ### 技术栈
+          - Qt 6.8.1
+          - C++17
+          - CMake 构建系统
+        token: ${{ secrets.GITHUB_TOKEN }}

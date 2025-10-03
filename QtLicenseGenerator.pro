@@ -3,6 +3,10 @@ QT       += core gui widgets
 TARGET = QtLicenseGenerator
 TEMPLATE = app
 
+# Static linking configuration
+CONFIG += static
+QMAKE_LFLAGS += -static -static-libgcc -static-libstdc++
+
 # OpenSSL configuration
 win32 {
     OPENSSL_PATH = $$(OPENSSL_ROOT_DIR)

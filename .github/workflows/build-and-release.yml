@@ -68,8 +68,43 @@ jobs:
         mkdir dist
         cp release/QtLicenseGenerator.exe dist/
         windeployqt dist/QtLicenseGenerator.exe
+
+        # Create portable ZIP
         cd dist
-        7z a QtLicenseGenerator-windows-x64.zip *
+        7z a QtLicenseGenerator-windows-x64-portable.zip *
+        cd ..
+
+        # Create installer with NSIS
+        choco install nsis -y
+
+        # Create NSIS script
+        @"
+        !include "MUI2.nsh"
+
+        Name "Qt License Generator"
+        OutFile "QtLicenseGenerator-windows-x64-installer.exe"
+        InstallDir `$PROGRAMFILES64\QtLicenseGenerator`
+
+        !insertmacro MUI_PAGE_DIRECTORY
+        !insertmacro MUI_PAGE_INSTFILES
+        !insertmacro MUI_LANGUAGE "English"
+
+        Section "Install"
+          SetOutPath `$INSTDIR
+          File /r "dist\*.*"
+          CreateShortcut "`$DESKTOP\QtLicenseGenerator.lnk" "`$INSTDIR\QtLicenseGenerator.exe"
+          WriteUninstaller "`$INSTDIR\uninstall.exe"
+        SectionEnd
+
+        Section "Uninstall"
+          Delete "`$INSTDIR\*.*"
+          Delete "`$DESKTOP\QtLicenseGenerator.lnk"
+          RMDir /r "`$INSTDIR"
+        SectionEnd
+        "@ | Out-File -FilePath installer.nsi -Encoding ASCII
+
+        makensis installer.nsi
+        mv QtLicenseGenerator-windows-x64-installer.exe dist/
 
     - name: Upload artifact (Linux)
       if: runner.os == 'Linux'
@@ -83,7 +118,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: windows-executable
-        path: dist/QtLicenseGenerator-windows-x64.zip
+        path: |
+          dist/QtLicenseGenerator-windows-x64-portable.zip
+          dist/QtLicenseGenerator-windows-x64-installer.exe
 
   release:
     needs: build
@@ -116,25 +153,27 @@ jobs:
       with:
         artifacts: |
           dist/QtLicenseGenerator-linux-x64.tar.gz
-          dist/QtLicenseGenerator-windows-x64.zip
+          dist/QtLicenseGenerator-windows-x64-portable.zip
+          dist/QtLicenseGenerator-windows-x64-installer.exe
         body: |
           ## 🚀 Qt License Generator ${{ github.ref_name }}
 
           ### 使用说明
-          1. 下载对应平台的安装包
-          2. 解压后运行 `QtLicenseGenerator` 可执行文件
-          3. 使用 GUI 界面生成和管理许可证
 
-          ### 平台支持
-          - **Linux** (x64)
-          - **Windows** (x64)
+          **Windows 用户：**
+          - **安装版**：下载 `QtLicenseGenerator-windows-x64-installer.exe`，双击安装
+          - **便携版**：下载 `QtLicenseGenerator-windows-x64-portable.zip`，解压即用
+
+          **Linux 用户：**
+          - 下载 `QtLicenseGenerator-linux-x64.tar.gz`，解压后运行
 
           ### 文件列表
+          - **QtLicenseGenerator-windows-x64-installer.exe** - Windows 安装程序（推荐）
+          - **QtLicenseGenerator-windows-x64-portable.zip** - Windows 便携版
           - **QtLicenseGenerator-linux-x64.tar.gz** - Linux 版本
-          - **QtLicenseGenerator-windows-x64.zip** - Windows 版本 (包含所有必需的 Qt 运行库)
 
           ### 技术栈
           - Qt 6.8.1
-          - C++
+          - C++ with OpenSSL
           - qmake 构建系统
         token: ${{ secrets.GITHUB_TOKEN }}

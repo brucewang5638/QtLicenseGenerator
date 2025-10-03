@@ -11,8 +11,9 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -111,11 +112,11 @@ jobs:
         name: windows-executable
         path: dist
 
-    - name: Download macOS executable
-      uses: actions/download-artifact@v4
-      with:
-        name: macos-executable
-        path: dist
+    # - name: Download macOS executable
+    #   uses: actions/download-artifact@v4
+    #   with:
+    #     name: macos-executable
+    #     path: dist
 
     - name: Create Release
       uses: ncipollo/release-action@v1
@@ -123,7 +124,6 @@ jobs:
         artifacts: |
           dist/QtLicenseGenerator-linux-x64.tar.gz
           dist/QtLicenseGenerator-windows-x64.zip
-          dist/QtLicenseGenerator-macos-x64.tar.gz
         body: |
           ## 🚀 Qt License Generator ${{ github.ref_name }}
 
@@ -135,12 +135,10 @@ jobs:
           ### 平台支持
           - **Linux** (x64)
           - **Windows** (x64)
-          - **macOS** (x64)
 
           ### 文件列表
           - **QtLicenseGenerator-linux-x64.tar.gz** - Linux 版本
           - **QtLicenseGenerator-windows-x64.zip** - Windows 版本 (包含所有必需的 Qt 运行库)
-          - **QtLicenseGenerator-macos-x64.tar.gz** - macOS 版本
 
           ### 技术栈
           - Qt 6.8.1

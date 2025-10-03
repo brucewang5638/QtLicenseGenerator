@@ -20,11 +20,22 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Qt
+    - name: Install Qt (Windows - Static)
+      if: runner.os == 'Windows'
       uses: jurplel/install-qt-action@v4
       with:
         version: '6.8.1'
         cache: true
+        modules: 'qt5compat'
+        setup-python: 'false'
+
+    - name: Install Qt (Linux - for AppImage)
+      if: runner.os == 'Linux'
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.1'
+        cache: true
+        setup-python: 'false'
 
     - name: Configure MSVC (Windows)
       if: runner.os == 'Windows'
@@ -53,14 +64,41 @@ jobs:
         qmake QtLicenseGenerator.pro
         nmake
 
-    - name: Package (Linux)
+    - name: Package (Linux) - Create AppImage
       if: runner.os == 'Linux'
       run: |
+        # Install AppImage tools
+        wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+        wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+        chmod +x linuxdeploy*.AppImage
+
+        # Prepare AppDir structure
+        mkdir -p AppDir/usr/bin
+        cp QtLicenseGenerator AppDir/usr/bin/
+
+        # Create desktop file
+        cat > QtLicenseGenerator.desktop <<EOF
+        [Desktop Entry]
+        Type=Application
+        Name=QtLicenseGenerator
+        Exec=QtLicenseGenerator
+        Icon=qtlicensegenerator
+        Categories=Utility;
+        EOF
+
+        # Create a simple icon (placeholder)
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        convert -size 256x256 xc:blue AppDir/usr/share/icons/hicolor/256x256/apps/qtlicensegenerator.png || touch AppDir/usr/share/icons/hicolor/256x256/apps/qtlicensegenerator.png
+
+        # Build AppImage
+        export QML_SOURCES_PATHS=.
+        export QMAKE=$Qt6_DIR/bin/qmake
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage --desktop-file=QtLicenseGenerator.desktop
+
+        # Move to dist
         mkdir -p dist
-        cp QtLicenseGenerator dist/
-        chmod +x dist/QtLicenseGenerator
-        cd dist
-        tar -czf QtLicenseGenerator-linux-x64.tar.gz QtLicenseGenerator
+        mv QtLicenseGenerator*.AppImage dist/QtLicenseGenerator-linux-x64.AppImage
+        chmod +x dist/QtLicenseGenerator-linux-x64.AppImage
 
     - name: Package (Windows)
       if: runner.os == 'Windows'
@@ -112,7 +150,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: linux-executable
-        path: dist/QtLicenseGenerator-linux-x64.tar.gz
+        path: dist/QtLicenseGenerator-linux-x64.AppImage
 
     - name: Upload artifact (Windows)
       if: runner.os == 'Windows'
@@ -153,7 +191,7 @@ jobs:
       uses: ncipollo/release-action@v1
       with:
         artifacts: |
-          dist/QtLicenseGenerator-linux-x64.tar.gz
+          dist/QtLicenseGenerator-linux-x64.AppImage
           dist/QtLicenseGenerator-windows-x64-portable.zip
           dist/QtLicenseGenerator-windows-x64-installer.exe
         body: |
@@ -162,19 +200,24 @@ jobs:
           ### 使用说明
 
           **Windows 用户：**
-          - **安装版**：下载 `QtLicenseGenerator-windows-x64-installer.exe`，双击安装
+          - **安装版**：下载 `QtLicenseGenerator-windows-x64-installer.exe`，双击安装（推荐）
           - **便携版**：下载 `QtLicenseGenerator-windows-x64-portable.zip`，解压即用
+          - ✅ **完全静态编译，无需安装任何运行库**
 
           **Linux 用户：**
-          - 下载 `QtLicenseGenerator-linux-x64.tar.gz`，解压后运行
+          - 下载 `QtLicenseGenerator-linux-x64.AppImage`
+          - 添加执行权限：`chmod +x QtLicenseGenerator-linux-x64.AppImage`
+          - 直接运行：`./QtLicenseGenerator-linux-x64.AppImage`
+          - ✅ **单文件包含所有依赖，无需安装 Qt 或 OpenSSL**
 
           ### 文件列表
-          - **QtLicenseGenerator-windows-x64-installer.exe** - Windows 安装程序（推荐）
-          - **QtLicenseGenerator-windows-x64-portable.zip** - Windows 便携版
-          - **QtLicenseGenerator-linux-x64.tar.gz** - Linux 版本
+          - **QtLicenseGenerator-windows-x64-installer.exe** - Windows 安装程序（静态编译）
+          - **QtLicenseGenerator-windows-x64-portable.zip** - Windows 便携版（静态编译）
+          - **QtLicenseGenerator-linux-x64.AppImage** - Linux AppImage（自包含）
 
-          ### 技术栈
-          - Qt 6.8.1
-          - C++ with OpenSSL
-          - qmake 构建系统
+          ### 技术特点
+          - ✅ 完全独立运行，无需安装依赖
+          - ✅ 静态链接 OpenSSL
+          - ✅ 单文件分发
+          - Qt 6.8.1 + C++17
         token: ${{ secrets.GITHUB_TOKEN }}

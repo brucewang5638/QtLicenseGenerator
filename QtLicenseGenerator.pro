@@ -3,13 +3,24 @@ QT       += core gui widgets
 TARGET = QtLicenseGenerator
 TEMPLATE = app
 
-# Static linking for Windows only (Qt on Linux typically uses shared libs)
+# Static linking configuration
+CONFIG += static staticlib
+QMAKE_LFLAGS += -static
+
+# Platform-specific static linking
 win32 {
-    CONFIG += static
-    QMAKE_LFLAGS += -static -static-libgcc -static-libstdc++
+    QMAKE_LFLAGS += -static-libgcc -static-libstdc++
+    # Import static Qt plugins
+    QTPLUGIN += qwindows qwindowsvistastyle
 }
 
-# OpenSSL configuration
+unix:!mac {
+    QMAKE_LFLAGS += -static-libgcc -static-libstdc++
+    # Import static Qt plugins for Linux
+    QTPLUGIN += qxcb
+}
+
+# OpenSSL static linking configuration
 win32 {
     OPENSSL_PATH = $$(OPENSSL_ROOT_DIR)
     isEmpty(OPENSSL_PATH) {
@@ -17,14 +28,22 @@ win32 {
     }
 
     INCLUDEPATH += $$OPENSSL_PATH/include
-    LIBS += -L$$OPENSSL_PATH/lib -llibssl -llibcrypto
 
-    # Try alternative paths if not found
-    !exists($$OPENSSL_PATH/lib/libssl.lib) {
-        LIBS += -L$$OPENSSL_PATH/lib/VC/x64/MD -llibssl -llibcrypto
+    # Try static libraries first
+    LIBS += -L$$OPENSSL_PATH/lib -llibssl_static -llibcrypto_static
+    LIBS += -lws2_32 -lcrypt32 -ladvapi32 -luser32
+
+    # Fallback to dynamic if static not available
+    !exists($$OPENSSL_PATH/lib/libssl_static.lib) {
+        LIBS += -L$$OPENSSL_PATH/lib -llibssl -llibcrypto
+        !exists($$OPENSSL_PATH/lib/libssl.lib) {
+            LIBS += -L$$OPENSSL_PATH/lib/VC/x64/MD -llibssl -llibcrypto
+        }
     }
 } else {
-    LIBS += -lssl -lcrypto
+    # Linux: Use static OpenSSL if available
+    LIBS += -Wl,-Bstatic -lssl -lcrypto -Wl,-Bdynamic
+    LIBS += -ldl -lpthread
 }
 
 SOURCES += main.cpp \

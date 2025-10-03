@@ -26,26 +26,24 @@ jobs:
         version: '6.8.1'
         cache: true
 
-    - name: Install Ninja
-      uses: lukka/get-cmake@latest
-
     - name: Configure MSVC (Windows)
       if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Configure CMake
-      run: |
-        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+    - name: Install OpenSSL (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libssl-dev
 
-    - name: Build
+    - name: Build with qmake
       run: |
-        cmake --build build --config Release
+        qmake QtLicenseGenerator.pro
+        make
 
     - name: Package (Linux)
       if: runner.os == 'Linux'
       run: |
         mkdir -p dist
-        cp build/QtLicenseGenerator dist/
+        cp QtLicenseGenerator dist/
         chmod +x dist/QtLicenseGenerator
         cd dist
         tar -czf QtLicenseGenerator-linux-x64.tar.gz QtLicenseGenerator
@@ -54,19 +52,10 @@ jobs:
       if: runner.os == 'Windows'
       run: |
         mkdir dist
-        cp build/QtLicenseGenerator.exe dist/
+        cp release/QtLicenseGenerator.exe dist/
         windeployqt dist/QtLicenseGenerator.exe
         cd dist
         7z a QtLicenseGenerator-windows-x64.zip *
-
-    - name: Package (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        mkdir -p dist
-        cp build/QtLicenseGenerator dist/
-        chmod +x dist/QtLicenseGenerator
-        cd dist
-        tar -czf QtLicenseGenerator-macos-x64.tar.gz QtLicenseGenerator
 
     - name: Upload artifact (Linux)
       if: runner.os == 'Linux'
@@ -81,13 +70,6 @@ jobs:
       with:
         name: windows-executable
         path: dist/QtLicenseGenerator-windows-x64.zip
-
-    - name: Upload artifact (macOS)
-      if: runner.os == 'macOS'
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-executable
-        path: dist/QtLicenseGenerator-macos-x64.tar.gz
 
   release:
     needs: build
@@ -139,6 +121,6 @@ jobs:
 
           ### 技术栈
           - Qt 6.8.1
-          - C++17
-          - CMake 构建系统
+          - C++
+          - qmake 构建系统
         token: ${{ secrets.GITHUB_TOKEN }}

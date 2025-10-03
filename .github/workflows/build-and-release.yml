@@ -34,10 +34,17 @@ jobs:
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y libssl-dev
 
-    - name: Build with qmake
+    - name: Build with qmake (Linux)
+      if: runner.os == 'Linux'
       run: |
         qmake QtLicenseGenerator.pro
         make
+
+    - name: Build with qmake (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        qmake QtLicenseGenerator.pro
+        nmake
 
     - name: Package (Linux)
       if: runner.os == 'Linux'

@@ -37,3 +37,6 @@ QtLicenseGenerator
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+
+*.AppImage

@@ -3,9 +3,11 @@ QT       += core gui widgets
 TARGET = QtLicenseGenerator
 TEMPLATE = app
 
-# Static linking configuration
-CONFIG += static
-QMAKE_LFLAGS += -static -static-libgcc -static-libstdc++
+# Static linking for Windows only (Qt on Linux typically uses shared libs)
+win32 {
+    CONFIG += static
+    QMAKE_LFLAGS += -static -static-libgcc -static-libstdc++
+}
 
 # OpenSSL configuration
 win32 {

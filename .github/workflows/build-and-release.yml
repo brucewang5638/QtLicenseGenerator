@@ -76,6 +76,7 @@ jobs:
 
         # Create installer with NSIS
         choco install nsis -y
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
         # Create NSIS script
         @"
@@ -103,7 +104,7 @@ jobs:
         SectionEnd
         "@ | Out-File -FilePath installer.nsi -Encoding ASCII
 
-        makensis installer.nsi
+        & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
         mv QtLicenseGenerator-windows-x64-installer.exe dist/
 
     - name: Upload artifact (Linux)

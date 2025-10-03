@@ -2,10 +2,8 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - master
-    tags:
-      - 'v*'
+    branches: [master]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -13,211 +11,110 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            name: linux
+            artifact: QtLicenseGenerator-linux-x64.AppImage
+          - os: windows-latest
+            name: windows
+            artifact: QtLicenseGenerator-windows-x64.zip
+
     runs-on: ${{ matrix.os }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Install Qt (Windows - Static)
-      if: runner.os == 'Windows'
+    - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
         version: '6.8.1'
         cache: true
-        modules: 'qt5compat'
-        setup-python: 'false'
+        setup-python: false
 
-    - name: Install Qt (Linux - for AppImage)
+    - name: Install OpenSSL (Linux)
       if: runner.os == 'Linux'
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '6.8.1'
-        cache: true
-        setup-python: 'false'
-
-    - name: Configure MSVC (Windows)
-      if: runner.os == 'Windows'
-      uses: ilammy/msvc-dev-cmd@v1
+      run: sudo apt-get update && sudo apt-get install -y libssl-dev libgl1-mesa-dev
 
     - name: Install OpenSSL (Windows)
       if: runner.os == 'Windows'
       run: |
         choco install openssl -y
-        $opensslPath = (Get-ChildItem "C:\Program Files\OpenSSL*" | Select-Object -First 1).FullName
-        echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
+        echo "OPENSSL_ROOT_DIR=$(Get-ChildItem 'C:\Program Files\OpenSSL*' | Select -First 1).FullName" >> $env:GITHUB_ENV
 
-    - name: Install OpenSSL (Linux)
-      if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y libssl-dev
-
-    - name: Build with qmake (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        qmake QtLicenseGenerator.pro
-        make
-
-    - name: Build with qmake (Windows)
+    - name: Setup MSVC
       if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Build
       run: |
         qmake QtLicenseGenerator.pro
-        nmake
+        ${{ runner.os == 'Windows' && 'nmake' || 'make -j$(nproc)' }}
 
-    - name: Package (Linux) - Create AppImage
+    - name: Package AppImage (Linux)
       if: runner.os == 'Linux'
       run: |
-        # Install AppImage tools
         wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
         wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
         chmod +x linuxdeploy*.AppImage
 
-        # Prepare AppDir structure
         mkdir -p AppDir/usr/bin
         cp QtLicenseGenerator AppDir/usr/bin/
 
-        # Create desktop file
-        cat > QtLicenseGenerator.desktop <<EOF
+        cat > app.desktop <<EOF
         [Desktop Entry]
         Type=Application
         Name=QtLicenseGenerator
         Exec=QtLicenseGenerator
-        Icon=qtlicensegenerator
+        Icon=app
         Categories=Utility;
         EOF
 
-        # Create a simple icon (placeholder)
-        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-        convert -size 256x256 xc:blue AppDir/usr/share/icons/hicolor/256x256/apps/qtlicensegenerator.png || touch AppDir/usr/share/icons/hicolor/256x256/apps/qtlicensegenerator.png
-
-        # Build AppImage
-        export QML_SOURCES_PATHS=.
         export QMAKE=$Qt6_DIR/bin/qmake
-        ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage --desktop-file=QtLicenseGenerator.desktop
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage --desktop-file=app.desktop
 
-        # Move to dist
-        mkdir -p dist
-        mv QtLicenseGenerator*.AppImage dist/QtLicenseGenerator-linux-x64.AppImage
-        chmod +x dist/QtLicenseGenerator-linux-x64.AppImage
+        mv QtLicenseGenerator*.AppImage ${{ matrix.artifact }}
 
-    - name: Package (Windows)
+    - name: Package ZIP (Windows)
       if: runner.os == 'Windows'
       run: |
         mkdir dist
         cp release/QtLicenseGenerator.exe dist/
-        windeployqt dist/QtLicenseGenerator.exe
+        windeployqt dist/QtLicenseGenerator.exe --release --no-translations
 
-        # Create portable ZIP
-        cd dist
-        7z a QtLicenseGenerator-windows-x64-portable.zip *
-        cd ..
+        if (Test-Path "$env:OPENSSL_ROOT_DIR\bin\*.dll") {
+          cp "$env:OPENSSL_ROOT_DIR\bin\libssl*.dll" dist/
+          cp "$env:OPENSSL_ROOT_DIR\bin\libcrypto*.dll" dist/
+        }
 
-        # Create installer with NSIS
-        choco install nsis -y
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        7z a ${{ matrix.artifact }} ./dist/*
 
-        # Create NSIS script
-        @"
-        !include "MUI2.nsh"
-
-        Name "Qt License Generator"
-        OutFile "QtLicenseGenerator-windows-x64-installer.exe"
-        InstallDir `$PROGRAMFILES64\QtLicenseGenerator`
-
-        !insertmacro MUI_PAGE_DIRECTORY
-        !insertmacro MUI_PAGE_INSTFILES
-        !insertmacro MUI_LANGUAGE "English"
-
-        Section "Install"
-          SetOutPath `$INSTDIR
-          File /r "dist\*.*"
-          CreateShortcut "`$DESKTOP\QtLicenseGenerator.lnk" "`$INSTDIR\QtLicenseGenerator.exe"
-          WriteUninstaller "`$INSTDIR\uninstall.exe"
-        SectionEnd
-
-        Section "Uninstall"
-          Delete "`$INSTDIR\*.*"
-          Delete "`$DESKTOP\QtLicenseGenerator.lnk"
-          RMDir /r "`$INSTDIR"
-        SectionEnd
-        "@ | Out-File -FilePath installer.nsi -Encoding ASCII
-
-        & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
-        mv QtLicenseGenerator-windows-x64-installer.exe dist/
-
-    - name: Upload artifact (Linux)
-      if: runner.os == 'Linux'
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: linux-executable
-        path: dist/QtLicenseGenerator-linux-x64.AppImage
-
-    - name: Upload artifact (Windows)
-      if: runner.os == 'Windows'
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-executable
-        path: |
-          dist/QtLicenseGenerator-windows-x64-portable.zip
-          dist/QtLicenseGenerator-windows-x64-installer.exe
+        name: ${{ matrix.name }}
+        path: ${{ matrix.artifact }}
 
   release:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
 
     steps:
-    - name: Download Linux executable
-      uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4
       with:
-        name: linux-executable
-        path: dist
-
-    - name: Download Windows executable
-      uses: actions/download-artifact@v4
-      with:
-        name: windows-executable
-        path: dist
-
-    # - name: Download macOS executable
-    #   uses: actions/download-artifact@v4
-    #   with:
-    #     name: macos-executable
-    #     path: dist
+        path: artifacts
 
     - name: Create Release
       uses: ncipollo/release-action@v1
       with:
-        artifacts: |
-          dist/QtLicenseGenerator-linux-x64.AppImage
-          dist/QtLicenseGenerator-windows-x64-portable.zip
-          dist/QtLicenseGenerator-windows-x64-installer.exe
+        artifacts: "artifacts/**/*"
+        generateReleaseNotes: true
         body: |
-          ## 🚀 Qt License Generator ${{ github.ref_name }}
+          ## Qt License Generator ${{ github.ref_name }}
 
-          ### 使用说明
+          **Linux**: Download `.AppImage`, `chmod +x`, run directly
+          **Windows**: Download `.zip`, extract and run
 
-          **Windows 用户：**
-          - **安装版**：下载 `QtLicenseGenerator-windows-x64-installer.exe`，双击安装（推荐）
-          - **便携版**：下载 `QtLicenseGenerator-windows-x64-portable.zip`，解压即用
-          - ✅ **完全静态编译，无需安装任何运行库**
-
-          **Linux 用户：**
-          - 下载 `QtLicenseGenerator-linux-x64.AppImage`
-          - 添加执行权限：`chmod +x QtLicenseGenerator-linux-x64.AppImage`
-          - 直接运行：`./QtLicenseGenerator-linux-x64.AppImage`
-          - ✅ **单文件包含所有依赖，无需安装 Qt 或 OpenSSL**
-
-          ### 文件列表
-          - **QtLicenseGenerator-windows-x64-installer.exe** - Windows 安装程序（静态编译）
-          - **QtLicenseGenerator-windows-x64-portable.zip** - Windows 便携版（静态编译）
-          - **QtLicenseGenerator-linux-x64.AppImage** - Linux AppImage（自包含）
-
-          ### 技术特点
-          - ✅ 完全独立运行，无需安装依赖
-          - ✅ 静态链接 OpenSSL
-          - ✅ 单文件分发
-          - Qt 6.8.1 + C++17
-        token: ${{ secrets.GITHUB_TOKEN }}
+          Both include all dependencies (Qt + OpenSSL)

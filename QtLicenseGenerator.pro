@@ -5,8 +5,12 @@ TEMPLATE = app
 
 # OpenSSL configuration
 win32 {
-    INCLUDEPATH += "C:/Program Files/OpenSSL/include"
-    LIBS += -L"C:/Program Files/OpenSSL/lib" -llibssl -llibcrypto
+    OPENSSL_ROOT = $$(OPENSSL_ROOT_DIR)
+    isEmpty(OPENSSL_ROOT) {
+        OPENSSL_ROOT = "C:/Program Files/OpenSSL"
+    }
+    INCLUDEPATH += $$OPENSSL_ROOT/include
+    LIBS += -L$$OPENSSL_ROOT/lib -llibssl -llibcrypto
 } else {
     LIBS += -lssl -lcrypto
 }

@@ -39,7 +39,10 @@ jobs:
       if: runner.os == 'Windows'
       run: |
         choco install openssl -y
-        echo "OPENSSL_ROOT_DIR=$(Get-ChildItem 'C:\Program Files\OpenSSL*' | Select -First 1).FullName" >> $env:GITHUB_ENV
+        $opensslPath = (Get-ChildItem 'C:\Program Files\OpenSSL*' | Select -First 1).FullName
+        echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
+        echo "LIB=$opensslPath\lib;$env:LIB" >> $env:GITHUB_ENV
+        echo "$opensslPath\bin" >> $env:GITHUB_PATH
 
     - name: Setup MSVC
       if: runner.os == 'Windows'
@@ -69,7 +72,8 @@ jobs:
         Categories=Utility;
         EOF
 
-        export QMAKE=$Qt6_DIR/bin/qmake
+        export QMAKE=$(which qmake)
+        export LD_LIBRARY_PATH=$Qt6_DIR/lib:$LD_LIBRARY_PATH
         ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage --desktop-file=app.desktop
 
         mv QtLicenseGenerator*.AppImage ${{ matrix.artifact }}
